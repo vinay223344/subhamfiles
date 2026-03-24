@@ -1,0 +1,352 @@
+///////////////////////////////////////////////////////////////
+//this module is for the state machine of the candy vending machine.
+//the machine accepts nickels, dimes and quarters and dispenses a 
+//candy  when the cost exceeeds 25cents. Change is returned. Every
+// nickel or dime or quarter signal can be anywahere from 3 to 5 clock-
+// duration signals  which means that when a coin is 
+//deposited, the signal generated is anywhere from 3 to 5 clock pulses wide.
+// /////////////////////////////////////////////////////////////
+`timescale 1ns/1ns
+//`define DES_ONLY
+/////////////////////////
+// design module.....
+/////////////////////////
+module //automatic 
+       candy_vending_Moore (
+    input n,   // nickel
+    input d,   // dime
+    input q,   // quarter
+    input clk, 
+    input rst, 
+    output dispense,
+    output rn, // return nickel
+    output rd  // return dime
+);
+
+localparam [3:0] // for holding value of money deposited....
+   S0  = 4'b0000,
+   S5  = 4'b0001,
+   S10 = 4'b0010,
+   S15 = 4'b0011,
+   S20 = 4'b0100,
+   S25 = 4'b0101,
+   S30 = 4'b0110,
+   S35 = 4'b0111,
+   S40 = 4'b1000,
+   S45 = 4'b1001,
+   DUM = 4'b1010, // dummy state...
+   RD2 = 4'b1011; // dispense 2nd dime
+
+localparam [1:0] // for generating a single pulse nickel signal
+   N0 = 2'b00,
+   N1 = 2'b01,
+   N2 = 2'b10;
+
+
+localparam [1:0] // for generating a single pulse dime signal
+   D0 = 2'b00,
+   D1 = 2'b01,
+   D2 = 2'b10;
+
+localparam [1:0] // for generating a single pulse quarter signal
+   Q0 = 2'b00,
+   Q1 = 2'b01,
+   Q2 = 2'b10;
+
+reg [3:0] cst, nst; /// current and next states...of main candy vending machine....
+
+wire n_sp, d_sp, q_sp; // single pulse signals on nickel, dime and quarter....
+reg [1:0] N, D, Q; // for the state machines to generate a single pulse signal on coin input
+reg [1:0] N_nst, D_nst, Q_nst; 
+////////////////////////////////////////
+always @(posedge clk or negedge rst)
+	if (!rst)
+		N <= 'b0;
+	else 
+		N <= N_nst;
+
+always @(*) begin
+	N_nst = N;
+	case(N)
+		2'b00: if (n) N_nst = 2'b01;
+		2'b01: N_nst = 2'b10;
+		2'b10: if (!n) N_nst = 2'b00;
+  endcase
+end
+assign n_sp = (N==2'b01);
+////////////////////////////////////////
+always @(posedge clk or negedge rst)
+	if (!rst)
+		D <= 'b0;
+	else 
+		D <= D_nst;
+
+always @(*) begin
+	D_nst = D;
+	case(D)
+		2'b00: if (d) D_nst = 2'b01;
+		2'b01: D_nst = 2'b10;
+		2'b10: if (!d) D_nst = 2'b00;
+  endcase
+end
+assign d_sp = (D==2'b01);
+////////////////////////////////////////
+always @(posedge clk or negedge rst)
+	if (!rst)
+		Q <= 'b0;
+	else 
+		Q <= Q_nst;
+
+always @(*) begin
+	Q_nst = Q;
+	case(Q)
+		2'b00: if (q) Q_nst = 2'b01;
+		2'b01: Q_nst = 2'b10;
+		2'b10: if (!q) Q_nst = 2'b00;
+  endcase
+end
+assign q_sp = (Q==2'b01);
+////////////////////////////////////////
+
+// generation of next state.....combinational logic
+always @(*)  begin : combilogic
+   case (cst) 
+      S0 : if(n_sp) nst = S5;
+      else if(d_sp) nst = S10;
+      else if(q_sp) nst = S25;
+      else nst = cst;
+
+      S5 : if(n_sp) nst = S10;
+      else if(d_sp) nst = S15;
+      else if(q_sp) nst = S30;
+      else nst = cst;
+
+      S10: if(n_sp) nst = S15;
+      else if(d_sp) nst = S20;
+      else if(q_sp) nst = S35;
+      else nst = cst;
+
+      S15: if(n_sp) nst = S20;
+      else if(d_sp) nst = S25;
+      else if(q_sp) nst = S40;
+      else nst = cst;
+
+      S20: if(n_sp) nst = S25;
+      else if(d_sp) nst = S30;
+      else if(q_sp) nst = S45;
+      else nst = cst;
+
+      S25,  // in all these states candy is dispensed....
+      S30, 
+      S35, 
+      S40, 
+      RD2: nst = S0;
+      S45: nst = DUM; // candy dispensed in S45
+      DUM: nst = RD2; // DUM : dummy state to separate out release of two dimes....  
+      default: nst = S0;
+   endcase
+end // combilogic
+
+always @(posedge clk or negedge rst) begin : sequential 
+   if(!rst) 
+     cst <= S0;
+   else
+     cst <= nst;
+ end : sequential 
+
+assign dispense = (cst == S45) |
+                  (cst == S40) |
+                  (cst == S35) |
+                  (cst == S30) |
+                  (cst == S25);
+// release nickel
+assign rn = (cst == S30) 
+          | (cst == S40); 
+          
+// release dime
+assign rd = (cst == S35)
+          | (cst == S40)
+          | (cst == S45)
+          | (cst == RD2); 
+
+endmodule
+
+///////////////////////////////////////////
+// test bench code.....
+///////////////////////////////////////////
+module tb_candy_vending_Moore ;
+reg     rst;  
+reg     clk;  
+reg     n;   // nickel
+reg     d;   // dime
+reg     q;   // quarter
+
+wire    dispense; 
+wire    rn; 
+wire    rd; 
+reg donebit;
+
+// instantiate the design unit...
+candy_vending_Moore U1 (
+    .n(n),   // nickel
+    .d(d),   // dime
+    .q(q),   // quarter
+    .clk(clk),  
+    .rst(rst),  
+    .dispense(dispense),
+    .rn(rn),
+    .rd(rd)  
+);
+
+// generate the clock....
+initial begin
+    clk = 1;  
+    #10;
+		while (!donebit)
+		  #5 clk = !clk;
+end
+
+// apply the inputs.....
+initial begin
+    rst = 0;
+    n=0; d=0; q=0; donebit = 0;
+    #23 rst = 1; // de-assert reset...
+
+  repeat(5) @(posedge clk); // delay...
+     
+  insert_nickel;
+  insert_nickel;
+  insert_nickel;
+  insert_nickel;
+  insert_nickel;
+  repeat(10) @(posedge clk); // delay...
+
+  insert_quarter;
+  repeat(10) @(posedge clk); // delay...
+
+  insert_nickel;
+  insert_dime;
+  insert_quarter;
+  repeat(10) @(posedge clk); // delay...
+
+  
+  insert_dime;
+  insert_dime;
+  insert_quarter;
+  repeat(10) @(posedge clk); // delay...
+  
+  insert_dime;
+  insert_dime;
+  insert_dime;
+  repeat(10) @(posedge clk); // delay...
+  
+  insert_dime;
+  insert_nickel;
+  insert_nickel;
+  insert_quarter;
+  repeat(10) @(posedge clk); // delay...
+
+  insert_nickel;
+  insert_quarter;
+  repeat(10) @(posedge clk); // delay...
+
+  insert_dime;
+  insert_quarter;
+  repeat(10) @(posedge clk); // delay...
+
+  insert_dime;
+  insert_nickel;
+  insert_dime;
+  repeat(10) @(posedge clk); // delay...
+  
+	donebit =1'b1; // all tests have been run....
+end
+/////////////// all coin signals of aleast 3 clock durations....
+task insert_nickel;
+  begin
+      @(posedge clk) n <= 1'b1;
+      repeat(3) @(posedge clk) ;
+      @(posedge clk) n <= 1'b0;
+	end
+endtask
+///////////////
+task insert_dime;
+  begin
+      @(posedge clk) d <= 1'b1;
+      repeat(3) @(posedge clk) ;
+      @(posedge clk) d <= 1'b0;
+  end
+endtask
+///////////////
+task insert_quarter;
+  begin
+      @(posedge clk) q <= 1'b1;
+      repeat(4) @(posedge clk) ;
+      @(posedge clk) q <= 1'b0;
+  end
+endtask
+///////////////
+/////////////////// self-checking code..... ///////////////////
+// self checking code can be written in a separate initial block
+// which can be included in case self-checking is required
+
+integer num_n, num_d, num_q, num_candy;
+integer n_ret, d_ret;
+reg cd; // candy dispense status....
+reg [4:0] index, fail; //max 15 tests planned....
+
+initial begin
+	num_n=0; num_d=0; num_q=0; num_candy=0; cd=0;
+	n_ret=0; d_ret=0; index=1; fail=0;
+	wait (rst);
+
+	// using nonblocking for all clockedge assignments
+	// though in this case it is not required....
+	while (!donebit) begin: whileloop
+		@(negedge clk);  // sample the values at negedge ....
+		if(U1.n_sp)  num_n <= num_n + 1;
+		if(U1.d_sp)  num_d <= num_d + 1;
+		if(U1.q_sp)  num_q <= num_q + 1;
+		if(rn) n_ret <= n_ret + 1;
+		if(rd) d_ret <= d_ret + 1;
+		if(dispense) begin
+			cd <= 1; // candy dispensed...
+			num_candy <= num_candy + 1;
+		end
+		if (cd & (U1.cst == U1.S0)) begin // check after candy dispense & change returned...
+			if((num_n*5 + num_d*10 + num_q*25) == (25 + n_ret*5 + d_ret*10)) // transaction ok..
+		    $display ("TEST[%0d] Passed... ", index);
+			else begin // show failure details....
+		    $display ("TEST[%0d] FAILED  !!!... ", index);
+				fail <= fail+1; // fail count..
+		    $display ("nickels  = %0d", num_n );
+		    $display ("dimes    = %0d", num_d );
+		    $display ("quarters = %0d", num_q );
+		    $display ("nickels returned =  %0d", n_ret );
+		    $display ("dimes   returned =  %0d\n", d_ret );
+			end
+			// and prepare for the next test...
+		  num_n <= 0; num_d <= 0; num_q <= 0; 
+			n_ret <= 0; d_ret <= 0; cd <= 0; 
+			index <= index + 1;
+		end 
+	end : whileloop
+
+	//PRINT SUMMARY .....
+	$display ("\n TESTS COMPLETED.........");
+	$display ("# candy dispensed  =  %0d", num_candy );
+
+  if (fail) begin
+		$display ("////////////////////////////////////////////////"); 
+		$display ("///////////////  TEST FAILED.....!!!  ///////////"); 
+		$display ("////////////////////////////////////////////////"); 
+	end
+	else begin
+		$display ("////////////////////////////////////////////////"); 
+		$display ("//////  Yeh !!.... ALL TESTS PASSED!!!   ////////"); 
+		$display ("////////////////////////////////////////////////"); 
+	end
+end
+////////////////////  
+endmodule
+
