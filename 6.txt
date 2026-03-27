@@ -1,0 +1,65 @@
+Write a Verilog module with only an output port \u2018telnum\u2019, on which a sequence of pulses to
+represent a given 8-digit telephone number, is produced. The telephone number must be a
+parameter in the module, so that the instantiated module is capable of handling any 8-digit
+telephone number. A pulse is a waveform which is 50msec ON followed by 50msec OFF. The
+number of pulses generated for a digit is equal to the digit being dialed. The digit zero must
+generate 10 pulses. A 300msec inter-digit gap must be maintained. The pulse train for the 8-
+digit number must be generated 5 times. 1000msec inter-repetition gap must be maintained.
+(All timings mentioned above are with respect to the rising edge of the pulse). Use the most
+efficient timescale. The module need not be synthesizable.
+
+`timescale 1ms / 1ms
+
+module phone (telnum_out);
+    parameter [31:0] telnum = 32'd98765432 ;
+    output reg telnum_out;
+
+    integer r, d, p;
+    reg [3:0] digits [0:7];
+    reg [3:0] pulse;
+
+    initial begin
+        telnum_out = 0;
+
+        // Extract digits from the parameter
+        digits[0] = (telnum / 10000000) % 10;
+        digits[1] = (telnum / 1000000) % 10;
+        digits[2] = (telnum / 100000) % 10;
+        digits[3] = (telnum / 10000) % 10;
+        digits[4] = (telnum / 1000) % 10;
+        digits[5] = (telnum / 100) % 10;
+        digits[6] = (telnum / 10) % 10;
+        digits[7] = telnum % 10;
+
+        // Repeat sequence 5 times
+        repeat (5) begin
+            for (d = 0; d < 8; d = d + 1) begin
+                
+                // Digit zero must generate 10 pulses
+                pulse = (digits[d] == 0) ? 10 : digits[d];
+
+                for (p = 0; p < pulse; p = p + 1) begin
+                    telnum_out = 1; #50; // ON
+                    telnum_out = 0; #50; // OFF
+                end
+
+                // Inter-digit gap: 300ms
+                #300; 
+            end
+
+            // Inter-repetition gap: 1000ms
+            // We already waited 300ms total after the last digit, so wait 700ms more
+            #700;
+        end
+
+        $display("Finished dialing %0d five times.", telnum);
+        $finish;
+    end
+
+endmodule
+
+module tb_phone;
+    wire telnum_line;
+    // Instantiate with a number containing '0' to verify the 10-pulse rule
+    phone #(.telnum(32'd12045678))UU1 (.telnum_out(telnum_line));
+endmodule
